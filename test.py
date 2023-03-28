@@ -1,17 +1,10 @@
 import argparse
 import numpy as np
+import matplotlib.pyplot as plt
 from scipy import signal
-from scipy import constants
-from collections import deque
 from ifxAvian import Avian
 
 from fft_spectrum import fft_spectrum
-from Peakcure import peakcure
-from Diffphase import diffphase
-from IIR_Heart import iir_heart
-from IIR_Breath import iir_breath
-from PeakBreath import peakbreath
-from PeakHeart import peakheart
 
 
 class HumanPresenceAndDFFTAlgo:
@@ -23,9 +16,9 @@ class HumanPresenceAndDFFTAlgo:
         # compute Blackman-Harris Window matrix over chirp samples(range)
         self.range_window = signal.blackmanharris(self.num_samples_per_chirp).reshape(1, self.num_samples_per_chirp)
 
-        bandwidth_hz = abs(config.end_frequency_Hz - config.start_frequency_Hz)
-        fft_size = self.num_samples_per_chirp * 2
-        self.range_bin_length = constants.c / (2 * bandwidth_hz * fft_size / self.num_samples_per_chirp)
+        # bandwidth_hz = abs(config.end_frequency_Hz - config.start_frequency_Hz)
+        # fft_size = self.num_samples_per_chirp * 2
+        # self.range_bin_length = constants.c / (2 * bandwidth_hz * fft_size / self.num_samples_per_chirp)
 
         # Algorithm Parameters
         self.detect_start_sample = self.num_samples_per_chirp // 8
@@ -59,10 +52,6 @@ class HumanPresenceAndDFFTAlgo:
         fft_spec_abs = abs(range_fft)
         fft_norm = np.divide(fft_spec_abs.sum(axis=0), self.num_chirps_per_frame)
 
-        skip = 8
-        max_index = np.argmax(fft_norm[skip:])
-        dist = self.range_bin_length * (max_index + skip)
-
         # Presence sensing
         if self.first_run:  # initialize averages
             self.slow_avg = fft_norm
@@ -95,9 +84,11 @@ def parse_program_arguments(description, def_nframes, def_frate):
     return parser.parse_args()
 
 
-# sourcery skip: for-index-underscore
-if __name__ == '__main__':
+def db(x):
+    return 20 * np.log10(np.abs(x))
 
+
+if __name__ == '__main__':
     args = parse_program_arguments(
         '''Derives presence and peeking information from Radar Data''',
         def_nframes=300,
@@ -121,42 +112,27 @@ if __name__ == '__main__':
 
     # connect to an Avian radar sensor
     with Avian.Device() as device:
-
-        # metrics = device.metrics_from_config(config)
-
-        # set device config
         device.set_config(config)
         algo = HumanPresenceAndDFFTAlgo(config)
-        q = deque()
-        while True:
+
+        num_frame = args.nframes
+        num_chirp = config.num_chirps_per_frame
+        num_sample = config.num_samples_per_chirp
+
+        data = []
+        for frame_number in range(args.nframes):
             frame = device.get_next_frame()
             frame = frame[0, 0, :]
+            data.append(frame)
 
-            q.append(frame)
-            if len(q) == args.nframes:
-                data = np.array(q)
-                presence, dfft_data = algo.human_presence_and_dfft(data)
-                if presence:
-                    # rang-bin相位提取及解纠缠
-                    rang_bin, phase, phase_unwrap = peakcure(dfft_data)
-                    # 相位差分
-                    diff_phase = diffphase(phase_unwrap)
-                    # 滑动平均滤波
-                    phase_remove = np.convolve(diff_phase, 5, 'same')
-                    # 过滤呼吸信号
-                    breath_wave = iir_breath(4, phase_remove)
-                    # 过滤心跳信号
-                    heart_wave = iir_heart(8, phase_remove)
-
-                    # breath_fre = np.abs(np.fft.fftshift(np.fft.fft(breath_wave)))
-                    heart_fre = np.abs(np.fft.fftshift(np.fft.fft(heart_wave)))
-
-                    breath_fre = np.abs(np.fft.fft(breath_wave)) ** 2
-
-                    breath_rate, maxIndexBreathSpect = peakbreath(breath_fre)
-                    heart_rate = peakheart(heart_fre, maxIndexBreathSpect)
-
-                    print(f"呼吸频率：{breath_rate}, 心跳频率：{heart_rate}")
-                else:
-                    print("当前位置无人")
-                q.pop()
+        data = np.array(data)
+        presence, dfft_data = algo.human_presence_and_dfft(data)
+        dfft_data = np.transpose(dfft_data)
+        X, Y = np.meshgrid(np.linspace(0, 60, num_frame * num_chirp), np.arange(num_sample -
+                                                                                150))
+        ax = plt.figure().add_subplot(projection='3d')
+        ax.plot_wireframe(X, Y, db(dfft_data[:num_sample - 150, :]))
+        ax.set_title('1dfft')
+        ax.set_xlabel('t/s')
+        ax.set_ylabel('range(m)')
+        plt.show()
