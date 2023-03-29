@@ -126,10 +126,13 @@ if __name__ == '__main__':
             data.append(frame)
 
         data = np.array(data)
-        presence, dfft_data = algo.human_presence_and_dfft(data)
+        mean_centering = np.zeros([num_frame, num_sample])
+        avg = np.sum(data[:, :], axis=1)/num_sample
+        for i in range(num_sample):
+            mean_centering[:, i] = data[:, i] - avg
+        presence, dfft_data = algo.human_presence_and_dfft(mean_centering)
         dfft_data = np.transpose(dfft_data)
-        X, Y = np.meshgrid(np.linspace(0, 60, num_frame * num_chirp), np.arange(num_sample -
-                                                                                150))
+        X, Y = np.meshgrid(np.linspace(0, 60, num_frame * num_chirp), np.arange(num_sample - 150))
         ax = plt.figure().add_subplot(projection='3d')
         ax.plot_wireframe(X, Y, db(dfft_data[:num_sample - 150, :]))
         ax.set_title('1dfft')
