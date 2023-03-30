@@ -5,6 +5,10 @@ from scipy import signal
 from ifxAvian import Avian
 
 from fft_spectrum import fft_spectrum
+from Peakcure import peakcure
+from Diffphase import diffphase
+from IIR_Heart import iir_heart
+from IIR_Breath import iir_breath
 
 
 class HumanPresenceAndDFFTAlgo:
@@ -98,7 +102,7 @@ if __name__ == '__main__':
 
     config = Avian.DeviceConfig(
         sample_rate_Hz=2e6,  # ADC sample rate of 2MHz
-        rx_mask=1,  # RX antenna 1 activated
+        rx_mask=2,  # RX antenna 1 activated
         tx_mask=1,  # TX antenna 1 activated
         tx_power_level=31,  # TX power level of 31
         if_gain_dB=33,  # 33dB if gain
@@ -127,15 +131,60 @@ if __name__ == '__main__':
 
         data = np.array(data)
         mean_centering = np.zeros([num_frame, num_sample])
-        avg = np.sum(data[:, :], axis=1)/num_sample
+        avg = np.sum(data[:, :], axis=1) / num_sample
         for i in range(num_sample):
             mean_centering[:, i] = data[:, i] - avg
         presence, dfft_data = algo.human_presence_and_dfft(mean_centering)
-        dfft_data = np.transpose(dfft_data)
-        X, Y = np.meshgrid(np.linspace(0, 60, num_frame * num_chirp), np.arange(num_sample - 150))
-        ax = plt.figure().add_subplot(projection='3d')
-        ax.plot_wireframe(X, Y, db(dfft_data[:num_sample - 150, :]))
-        ax.set_title('1dfft')
-        ax.set_xlabel('t/s')
-        ax.set_ylabel('range(m)')
+
+        # dfft_data = np.transpose(dfft_data)
+        # X, Y = np.meshgrid(np.linspace(0, 60, num_frame * num_chirp), np.arange(num_sample - 150))
+        # ax = plt.figure(1).add_subplot(projection='3d')
+        # ax.plot_wireframe(X, Y, db(dfft_data[:num_sample - 150, :]))
+        # ax.set_title('1dfft')
+        # ax.set_xlabel('t/s')
+        # ax.set_ylabel('range(m)')
+        # plt.show()
+        # rang-bin相位提取及解纠缠
+        rang_bin, phase, phase_unwrap = peakcure(dfft_data)
+
+        times = np.linspace(0, 60, num_frame)
+        plt.figure(2)
+        plt.subplot(3, 1, 1)
+        plt.plot(times, db(rang_bin))
+        plt.title('Range-bin curve')
+        plt.xlabel('t/s')
+        plt.ylabel('dB')
+        plt.subplot(3, 1, 2)
+        plt.plot(times, phase)
+        plt.title('before Phase unwrap Infro')
+        plt.xlabel('t/s')
+        plt.ylabel('dB')
+        plt.subplot(3, 1, 3)
+        plt.plot(times, phase_unwrap)
+        plt.title('Afert Phase unwrap Infro')
+        plt.xlabel('t/s')
+        plt.ylabel('dB')
         plt.show()
+
+        # 相位差分
+        diff_phase = diffphase(phase_unwrap)
+        # 滑动平均滤波
+        phase_remove = np.convolve(diff_phase, 5, 'same')
+
+        plt.figure(3)
+        plt.subplot(2, 1, 1)
+        plt.plot(times, diff_phase)
+        plt.title('Phase diff curve')
+        plt.xlabel('t/s')
+        plt.ylabel('dB')
+        plt.subplot(2, 1, 2)
+        plt.plot(times, phase_remove)
+        plt.title('Pluse remove curve')
+        plt.xlabel('t/s')
+        plt.ylabel('dB')
+        plt.show()
+
+        # 过滤呼吸信号
+        breath_wave = iir_breath(4, phase_remove)
+        # 过滤心跳信号
+        heart_wave = iir_heart(8, phase_remove)

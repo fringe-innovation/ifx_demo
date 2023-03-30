@@ -136,27 +136,24 @@ if __name__ == '__main__':
             if len(q) == args.nframes:
                 data = np.array(q)
                 presence, dfft_data = algo.human_presence_and_dfft(data)
-                if presence:
-                    # rang-bin相位提取及解纠缠
-                    rang_bin, phase, phase_unwrap = peakcure(dfft_data)
-                    # 相位差分
-                    diff_phase = diffphase(phase_unwrap)
-                    # 滑动平均滤波
-                    phase_remove = np.convolve(diff_phase, 5, 'same')
-                    # 过滤呼吸信号
-                    breath_wave = iir_breath(4, phase_remove)
-                    # 过滤心跳信号
-                    heart_wave = iir_heart(8, phase_remove)
+                # rang-bin相位提取及解纠缠
+                rang_bin, phase, phase_unwrap = peakcure(dfft_data)
+                # 相位差分
+                diff_phase = diffphase(phase_unwrap)
+                # 滑动平均滤波
+                phase_remove = np.convolve(diff_phase, 5, 'same')
+                # 过滤呼吸信号
+                breath_wave = iir_breath(4, phase_remove)
+                # 过滤心跳信号
+                heart_wave = iir_heart(8, phase_remove)
 
-                    # breath_fre = np.abs(np.fft.fftshift(np.fft.fft(breath_wave)))
-                    heart_fre = np.abs(np.fft.fftshift(np.fft.fft(heart_wave)))
+                # breath_fre = np.abs(np.fft.fftshift(np.fft.fft(breath_wave)))
+                heart_fre = np.abs(np.fft.fftshift(np.fft.fft(heart_wave)))
 
-                    breath_fre = np.abs(np.fft.fft(breath_wave)) ** 2
+                breath_fre = np.abs(np.fft.fft(breath_wave)) ** 2
 
-                    breath_rate, maxIndexBreathSpect = peakbreath(breath_fre)
-                    heart_rate = peakheart(heart_fre, maxIndexBreathSpect)
+                breath_rate, maxIndexBreathSpect = peakbreath(breath_fre)
+                heart_rate = peakheart(heart_fre, maxIndexBreathSpect)
 
-                    print(f"呼吸频率：{breath_rate}, 心跳频率：{heart_rate}")
-                else:
-                    print("当前位置无人")
+                print(f"呼吸频率：{breath_rate}, 心跳频率：{heart_rate}")
                 q.pop()
