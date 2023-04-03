@@ -2,6 +2,7 @@ import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import signal
+from scipy import constants
 from ifxAvian import Avian
 
 from fft_spectrum import fft_spectrum
@@ -20,34 +21,12 @@ class HumanPresenceAndDFFTAlgo:
         # compute Blackman-Harris Window matrix over chirp samples(range)
         self.range_window = signal.blackmanharris(self.num_samples_per_chirp).reshape(1, self.num_samples_per_chirp)
 
-        # bandwidth_hz = abs(config.end_frequency_Hz - config.start_frequency_Hz)
-        # fft_size = self.num_samples_per_chirp * 2
-        # self.range_bin_length = constants.c / (2 * bandwidth_hz * fft_size / self.num_samples_per_chirp)
-
-        # Algorithm Parameters
-        self.detect_start_sample = self.num_samples_per_chirp // 8
-        self.detect_end_sample = self.num_samples_per_chirp // 2
-
-        self.threshold_presence = 0.1
-
-        self.alpha_slow = 0.001
-        self.alpha_med = 0.05
-        self.alpha_fast = 0.6
-
-        self.slow_avg = None
-        self.fast_avg = None
-
-        # Initialize state
-        self.presence_status = False
-        self.first_run = True
+        bandwidth_hz = abs(config.end_frequency_Hz - config.start_frequency_Hz)
+        fft_size = self.num_samples_per_chirp * 2
+        self.range_bin_length = constants.c / (2 * bandwidth_hz * fft_size / self.num_samples_per_chirp)
 
     def human_presence_and_dfft(self, data_in):  # sourcery skip: inline-immediately-returned-variable
         # data: single chirp data for single antenna
-
-        # copy values into local variables to keep names short
-        alpha_slow = self.alpha_slow
-        alpha_med = self.alpha_med
-        alpha_fast = self.alpha_fast
 
         # calculate range fft spectrum of the frame
         range_fft = fft_spectrum(data_in, self.range_window)
@@ -56,20 +35,11 @@ class HumanPresenceAndDFFTAlgo:
         fft_spec_abs = abs(range_fft)
         fft_norm = np.divide(fft_spec_abs.sum(axis=0), self.num_chirps_per_frame)
 
-        # Presence sensing
-        if self.first_run:  # initialize averages
-            self.slow_avg = fft_norm
-            self.fast_avg = fft_norm
-            self.first_run = False
+        skip = 20
+        max_index = np.argmax(fft_norm[skip:])
+        dist = self.range_bin_length * (max_index + skip)
 
-        alpha_used = alpha_med if self.presence_status == False else alpha_slow
-        self.slow_avg = self.slow_avg * (1 - alpha_used) + fft_norm * alpha_used
-        self.fast_avg = self.fast_avg * (1 - alpha_fast) + fft_norm * alpha_fast
-        data = self.fast_avg - self.slow_avg
-
-        self.presence_status = np.max(data[self.detect_start_sample:self.detect_end_sample]) > self.threshold_presence
-
-        return self.presence_status, range_fft
+        return range_fft, dist
 
 
 def parse_program_arguments(description, def_nframes, def_frate):
@@ -111,7 +81,8 @@ if __name__ == '__main__':
         num_samples_per_chirp=256,  # 256 samples per chirp
         num_chirps_per_frame=1,  # 32 chirps per frame
         chirp_repetition_time_s=0.000150,  # Chirp repetition time (or pulse repetition time) of 150us
-        frame_repetition_time_s=1 / args.frate,  # Frame repetition time default 0.005s (frame rate of 200Hz)
+        frame_repetition_time_s=1 / args.frate,  # Frame repetition time default 0.05s (frame rate of 20Hz)
+        hp_cutoff_Hz=20000,
         mimo_mode="off")  # MIMO disabled
 
     # connect to an Avian radar sensor
@@ -134,57 +105,89 @@ if __name__ == '__main__':
         avg = np.sum(data[:, :], axis=1) / num_sample
         for i in range(num_sample):
             mean_centering[:, i] = data[:, i] - avg
-        presence, dfft_data = algo.human_presence_and_dfft(mean_centering)
+        dfft_data, dist = algo.human_presence_and_dfft(mean_centering)
 
-        # dfft_data = np.transpose(dfft_data)
-        # X, Y = np.meshgrid(np.linspace(0, 60, num_frame * num_chirp), np.arange(num_sample - 150))
-        # ax = plt.figure(1).add_subplot(projection='3d')
-        # ax.plot_wireframe(X, Y, db(dfft_data[:num_sample - 150, :]))
-        # ax.set_title('1dfft')
-        # ax.set_xlabel('t/s')
-        # ax.set_ylabel('range(m)')
-        # plt.show()
-        # rang-bin相位提取及解纠缠
-        rang_bin, phase, phase_unwrap = peakcure(dfft_data)
-
-        times = np.linspace(0, 60, num_frame)
-        plt.figure(2)
-        plt.subplot(3, 1, 1)
-        plt.plot(times, db(rang_bin))
-        plt.title('Range-bin curve')
-        plt.xlabel('t/s')
-        plt.ylabel('dB')
-        plt.subplot(3, 1, 2)
-        plt.plot(times, phase)
-        plt.title('before Phase unwrap Infro')
-        plt.xlabel('t/s')
-        plt.ylabel('dB')
-        plt.subplot(3, 1, 3)
-        plt.plot(times, phase_unwrap)
-        plt.title('Afert Phase unwrap Infro')
-        plt.xlabel('t/s')
-        plt.ylabel('dB')
+        dfft_data = np.transpose(dfft_data)
+        X, Y = np.meshgrid(np.linspace(0, 60, num_frame * num_chirp), np.arange(num_sample - 150))
+        ax = plt.figure(1).add_subplot(projection='3d')
+        ax.plot_wireframe(X, Y, db(dfft_data[:num_sample - 150, :]))
+        ax.set_title('1dfft')
+        ax.set_xlabel('t/s')
+        ax.set_ylabel('range(m)')
         plt.show()
+        if 0.3 < dist < 0.9:
+            # rang-bin相位提取及解纠缠
+            rang_bin, phase, phase_unwrap = peakcure(dfft_data)
 
-        # 相位差分
-        diff_phase = diffphase(phase_unwrap)
-        # 滑动平均滤波
-        phase_remove = np.convolve(diff_phase, 5, 'same')
+            times = np.linspace(0, 60, num_frame)
+            plt.figure(2)
+            plt.subplot(3, 1, 1)
+            plt.plot(times, db(rang_bin))
+            plt.title('Range-bin curve')
+            plt.xlabel('t/s')
+            plt.ylabel('dB')
+            plt.subplot(3, 1, 2)
+            plt.plot(times, phase)
+            plt.title('before Phase unwrap Infro')
+            plt.xlabel('t/s')
+            plt.ylabel('dB')
+            plt.subplot(3, 1, 3)
+            plt.plot(times, phase_unwrap)
+            plt.title('Afert Phase unwrap Infro')
+            plt.xlabel('t/s')
+            plt.ylabel('dB')
 
-        plt.figure(3)
-        plt.subplot(2, 1, 1)
-        plt.plot(times, diff_phase)
-        plt.title('Phase diff curve')
-        plt.xlabel('t/s')
-        plt.ylabel('dB')
-        plt.subplot(2, 1, 2)
-        plt.plot(times, phase_remove)
-        plt.title('Pluse remove curve')
-        plt.xlabel('t/s')
-        plt.ylabel('dB')
-        plt.show()
+            # 相位差分
+            diff_phase = diffphase(phase_unwrap)
+            # 滑动平均滤波
+            phase_remove = np.convolve(diff_phase, 5, 'same')
 
-        # 过滤呼吸信号
-        breath_wave = iir_breath(4, phase_remove)
-        # 过滤心跳信号
-        heart_wave = iir_heart(8, phase_remove)
+            plt.figure(3)
+            plt.subplot(2, 1, 1)
+            plt.plot(times, diff_phase)
+            plt.title('Phase diff curve')
+            plt.xlabel('t/s')
+            plt.ylabel('dB')
+            plt.subplot(2, 1, 2)
+            plt.plot(times, phase_remove)
+            plt.title('Pluse remove curve')
+            plt.xlabel('t/s')
+            plt.ylabel('dB')
+
+            # 过滤呼吸信号
+            breath_wave = iir_breath(4, phase_remove)
+            # 过滤心跳信号
+            heart_wave = iir_heart(8, phase_remove)
+
+            plt.figure(4)
+            plt.subplot(2, 1, 1)
+            plt.plot(times, breath_wave)
+            plt.title('Respiratory waveform')
+            plt.xlabel('t/s')
+            plt.ylabel('dB')
+            plt.subplot(2, 1, 2)
+            plt.plot(times, heart_wave)
+            plt.title('Heart waveform')
+            plt.xlabel('t/s')
+            plt.ylabel('dB')
+
+            heart_fre = np.abs(np.fft.fftshift(np.fft.fft(heart_wave)))
+
+            breath_fre = np.abs(np.fft.fft(breath_wave)) ** 2
+
+            plt.figure(5)
+            plt.subplot(2, 1, 1)
+            plt.plot(times, breath_fre)
+            plt.title('Respiratory spectrum')
+            plt.xlabel('freq/Hz')
+            plt.ylabel('dB')
+            plt.subplot(2, 1, 2)
+            plt.plot(times, heart_fre)
+            plt.title('Heart spectrum')
+            plt.xlabel('freq/Hz')
+            plt.ylabel('dB')
+
+        elif dist < 0.3:
+            print('被遮挡')
+        else:
+            print('当前位置无人')
