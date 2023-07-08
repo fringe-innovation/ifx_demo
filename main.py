@@ -21,7 +21,8 @@ class HumanPresenceAndDFFTAlgo:
         self.num_chirps_per_frame = config.num_chirps_per_frame
 
         # compute Blackman-Harris Window matrix over chirp samples(range)
-        self.range_window = signal.blackmanharris(self.num_samples_per_chirp).reshape(1, self.num_samples_per_chirp)
+        self.range_window = signal.windows.hamming(self.num_samples_per_chirp).reshape(1, self.num_samples_per_chirp)
+        # self.range_window = signal.windows.blackmanharris(self.num_samples_per_chirp).reshape(1, self.num_samples_per_chirp)
 
         bandwidth_hz = abs(config.end_frequency_Hz - config.start_frequency_Hz)
         fft_size = self.num_samples_per_chirp * 2
@@ -113,10 +114,10 @@ if __name__ == '__main__':
         if_gain_dB=33,  # 33dB if gain
         start_frequency_Hz=58e9,  # start frequency: 58.0 GHz
         end_frequency_Hz=63.5e9,  # end frequency: 63.5 GHz
-        num_samples_per_chirp=256,  # 256 samples per chirp
-        num_chirps_per_frame=1,  # 32 chirps per frame
+        num_samples_per_chirp=128,  # 128 samples per chirp
+        num_chirps_per_frame=256,  # 256 chirps per frame
         chirp_repetition_time_s=0.000150,  # Chirp repetition time (or pulse repetition time) of 150us
-        frame_repetition_time_s=1 / args.frate,  # Frame repetition time default 0.005s (frame rate of 200Hz)
+        frame_repetition_time_s=1 / args.frate,  # Frame repetition time default 0.005s (frame rate of 20Hz)
         mimo_mode="off")  # MIMO disabled
 
     # connect to an Avian radar sensor
@@ -130,7 +131,7 @@ if __name__ == '__main__':
         q = deque()
         while True:
             frame = device.get_next_frame()
-            frame = frame[0, 0, :]
+            frame = frame[0, :, :]
 
             q.append(frame)
             if len(q) == args.nframes:

@@ -68,4 +68,3 @@ def fft_spectrum(mat, range_window):
     range_fft = 2*range_fft[:, range(int(chirpsamples))]
 
     return range_fft
-        
