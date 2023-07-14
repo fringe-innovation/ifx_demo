@@ -48,7 +48,7 @@ class PresenceAntiPeekingAlgo:
 
         # Algorithm Parameters
         self.detect_start_sample = num_samples_per_chirp//8
-        self.detect_end_sample = num_samples_per_chirp//2
+        self.detect_end_sample = num_samples_per_chirp
         self.peek_start_sample = num_samples_per_chirp//2
         self.peek_end_sample = num_samples_per_chirp
 
