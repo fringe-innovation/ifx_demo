@@ -2,8 +2,8 @@ from ifxAvian import Avian
 
 import numpy as np
 # from scipy import signal
-import pprint
-from collections import namedtuple
+# import pprint
+
 
 # from examples.internal.fft_spectrum import *
 from DBF import DBF
@@ -41,7 +41,7 @@ if __name__ == "__main__":
 
         # get metrics and print them
         metrics = device.metrics_from_config(config)
-        pprint.pprint(metrics)
+        # pprint.pprint(metrics)
 
         # get maximum range
         max_range_m = metrics.max_range_m
@@ -56,50 +56,51 @@ if __name__ == "__main__":
         presence = PresenceAntiPeekingAlgo(
             config.num_samples_per_chirp, config.num_chirps_per_frame)
 
-        frame_data = device.get_next_frame()
+        while True:
+            frame_data = device.get_next_frame()
 
-        status = np.zeros(num_rx_antennas, dtype=bool)
+            status = np.zeros(num_rx_antennas, dtype=bool)
 
-        rd_spectrum = np.zeros(
-            (config.num_samples_per_chirp, 2*config.num_chirps_per_frame, num_rx_antennas), dtype=complex)
+            rd_spectrum = np.zeros(
+                (config.num_samples_per_chirp, 2*config.num_chirps_per_frame, num_rx_antennas), dtype=complex)
 
-        beam_range_energy = np.zeros(
-            (config.num_samples_per_chirp, num_beams))
+            beam_range_energy = np.zeros(
+                (config.num_samples_per_chirp, num_beams))
 
-        for i_ant in range(num_rx_antennas):   # For each antenna:
-            data = frame_data[i_ant, :, :]
-            presence_status, peeking_status = presence.presence(data)
-            status[i_ant] = presence_status
+            for i_ant in range(num_rx_antennas):   # For each antenna:
+                data = frame_data[i_ant, :, :]
+                presence_status, peeking_status = presence.presence(data)
+                status[i_ant] = presence_status
 
-            # Compute Doppler spectrum
-            dfft_dbfs = doppler.compute_doppler_map(data, i_ant)
-            rd_spectrum[:, :, i_ant] = dfft_dbfs
+                # Compute Doppler spectrum
+                dfft_dbfs = doppler.compute_doppler_map(data, i_ant)
+                rd_spectrum[:, :, i_ant] = dfft_dbfs
 
-        if np.any(status):
+            if np.any(status):
 
-            # Compute Range-Angle map
-            rd_beam_formed = dbf.run(rd_spectrum)
-            for i_beam in range(num_beams):
-                doppler_i = rd_beam_formed[:, :, i_beam]
-                beam_range_energy[:, i_beam] += np.linalg.norm(
-                    doppler_i, axis=1) / np.sqrt(num_beams)
+                # Compute Range-Angle map
+                rd_beam_formed = dbf.run(rd_spectrum)
+                for i_beam in range(num_beams):
+                    doppler_i = rd_beam_formed[:, :, i_beam]
+                    beam_range_energy[:, i_beam] += np.linalg.norm(
+                        doppler_i, axis=1) / np.sqrt(num_beams)
 
-            # Maximum energy in Range-Angle map
-            max_energy = np.max(beam_range_energy)
+                # Maximum energy in Range-Angle map
+                max_energy = np.max(beam_range_energy)
 
-            # Rescale map to better capture the peak The rescaling is done in a
-            # way such that the maximum always has the same value, independent
-            # on the original input peak. A proper peak search can greatly
-            # improve this algorithm.
-            scale = 150
-            beam_range_energy = scale*(beam_range_energy/max_energy - 1)
+                # Rescale map to better capture the peak The rescaling is done in a
+                # way such that the maximum always has the same value, independent
+                # on the original input peak. A proper peak search can greatly
+                # improve this algorithm.
+                scale = 150
+                beam_range_energy = scale*(beam_range_energy/max_energy - 1)
 
-            # Find dominant angle of target
-            _, idx = np.unravel_index(
-                beam_range_energy.argmax(), beam_range_energy.shape)
-            angle_degrees = np.linspace(-max_angle_degrees,
-                                        max_angle_degrees, num_beams)[idx]
-            print(f"Angle: {angle_degrees} degrees")
+                # Find dominant angle of target
+                _, idx = np.unravel_index(
+                    beam_range_energy.argmax(), beam_range_energy.shape)
+                angle_degrees = np.linspace(-max_angle_degrees,
+                                            max_angle_degrees, num_beams)[idx]
+                print(f"Angle: {angle_degrees} degrees")
 
-        else:
-            print("No presence detected")
+            else:
+                print("No presence detected")
