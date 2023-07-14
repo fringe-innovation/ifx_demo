@@ -21,8 +21,8 @@ if __name__ == "__main__":
 
     config = Avian.DeviceConfig(
         sample_rate_Hz=2e6,                   # ADC sample rate of 1MHz
-        rx_mask=1,                            # RX antenna 1 activated
-        tx_mask=5,                            # TX antenna 1 and 3 activated
+        rx_mask=5,                            # RX antenna 1 activated
+        tx_mask=1,                            # TX antenna 1 and 3 activated
         tx_power_level=31,                    # TX power level of 31
         if_gain_dB=33,                        # 33dB if gain
         start_frequency_Hz=58e9,              # start frequency: 58 GHz
@@ -100,3 +100,6 @@ if __name__ == "__main__":
             angle_degrees = np.linspace(-max_angle_degrees,
                                         max_angle_degrees, num_beams)[idx]
             print(f"Angle: {angle_degrees} degrees")
+
+        else:
+            print("No presence detected")
