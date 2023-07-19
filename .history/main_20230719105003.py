@@ -5,7 +5,7 @@ from scipy import constants
 from collections import deque
 from ifxAvian import Avian
 
-from internal.fft_spectrum import fft_spectrum
+from fft_spectrum import fft_spectrum
 from Peakcure import peakcure
 from Diffphase import diffphase
 from IIR_Heart import iir_heart

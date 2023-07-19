@@ -6,10 +6,10 @@ import numpy as np
 
 
 # from examples.internal.fft_spectrum import *
-from internal.DBF import DBF
-from internal.doppler import DopplerAlgo
-from internal.presence_detection import PresenceAntiPeekingAlgo
-from internal.range_angle_map import num_rx_antennas_from_config
+from DBF import DBF
+from doppler import DopplerAlgo
+from presence_detection import PresenceAntiPeekingAlgo
+from range_angle_map import num_rx_antennas_from_config
 
 
 if __name__ == "__main__":
