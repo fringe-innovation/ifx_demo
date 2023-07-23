@@ -5,7 +5,7 @@ from scipy import constants
 from collections import deque
 from ifxAvian import Avian
 
-from internal.fft_spectrum import fft_spectrum
+from fft_spectrum import fft_spectrum
 from Peakcure import peakcure
 from Diffphase import diffphase
 from IIR_Heart import iir_heart
@@ -29,22 +29,22 @@ class HumanPresenceAndDFFTAlgo:
         fft_size = self.num_samples_per_chirp * 2
         self.range_bin_length = constants.c / (2 * bandwidth_hz * fft_size / self.num_samples_per_chirp)
 
-        # Algorithm Parameters
-        self.detect_start_sample = self.num_samples_per_chirp // 8
-        self.detect_end_sample = self.num_samples_per_chirp // 2
-        
-        self.threshold_presence = 0.1
-        
-        self.alpha_slow = 0.001
-        self.alpha_med = 0.05
-        self.alpha_fast = 0.6
-        
-        self.slow_avg = None
-        self.fast_avg = None
-        
-        # Initialize state
-        self.presence_status = False
-        self.first_run = True
+        # # Algorithm Parameters
+        # self.detect_start_sample = self.num_samples_per_chirp // 8
+        # self.detect_end_sample = self.num_samples_per_chirp // 2
+        #
+        # self.threshold_presence = 0.1
+        #
+        # self.alpha_slow = 0.001
+        # self.alpha_med = 0.05
+        # self.alpha_fast = 0.6
+        #
+        # self.slow_avg = None
+        # self.fast_avg = None
+        #
+        # # Initialize state
+        # self.presence_status = False
+        # self.first_run = True
 
     def human_presence_and_dfft(self, data_in):  # sourcery skip: inline-immediately-returned-variable
         # data: single chirp data for single antenna
@@ -134,26 +134,26 @@ if __name__ == '__main__':
             frame = device.get_next_frame()
             frame = frame[0, :, :]
 
-            q.append(frame)
-            if len(q) == args.nframes:
-                data = np.array(q)
-                presence, dfft_data = algo.human_presence_and_dfft(data)
-                # rang-bin相位提取及解纠缠
-                rang_bin, phase, phase_unwrap = peakcure(dfft_data)
-                # 相位差分
-                diff_phase = diffphase(phase_unwrap)
-                # 过滤呼吸信号
-                breath_wave = iir_breath(4, diff_phase)
-                # 过滤心跳信号
-                heart_wave = iir_heart(8, diff_phase)
-            
-                breath_fre = np.abs(np.fft.fftshift(np.fft.fft(breath_wave)))
-                heart_fre = np.abs(np.fft.fftshift(np.fft.fft(heart_wave)))
-            
-                breath_fre = np.abs(np.fft.fft(breath_wave)) ** 2
-            
-                breath_rate, maxIndexBreathSpect = peakbreath(breath_fre)
-                heart_rate = peakheart(heart_fre, maxIndexBreathSpect)
-            
-                print(f"呼吸频率：{breath_rate}, 心跳频率：{heart_rate}")
-                q.pop()
+            # q.append(frame)
+            # if len(q) == args.nframes:
+            #     data = np.array(q)
+            #     presence, dfft_data = algo.human_presence_and_dfft(data)
+            #     # rang-bin相位提取及解纠缠
+            #     rang_bin, phase, phase_unwrap = peakcure(dfft_data)
+            #     # 相位差分
+            #     diff_phase = diffphase(phase_unwrap)
+            #     # 过滤呼吸信号
+            #     breath_wave = iir_breath(4, diff_phase)
+            #     # 过滤心跳信号
+            #     heart_wave = iir_heart(8, diff_phase)
+            #
+            #     # breath_fre = np.abs(np.fft.fftshift(np.fft.fft(breath_wave)))
+            #     heart_fre = np.abs(np.fft.fftshift(np.fft.fft(heart_wave)))
+            #
+            #     breath_fre = np.abs(np.fft.fft(breath_wave)) ** 2
+            #
+            #     breath_rate, maxIndexBreathSpect = peakbreath(breath_fre)
+            #     heart_rate = peakheart(heart_fre, maxIndexBreathSpect)
+            #
+            #     print(f"呼吸频率：{breath_rate}, 心跳频率：{heart_rate}")
+            #     q.pop()

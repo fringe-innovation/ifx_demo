@@ -6,10 +6,10 @@ import numpy as np
 
 
 # from examples.internal.fft_spectrum import *
-from internal.DBF import DBF
-from internal.doppler import DopplerAlgo
-from internal.presence_detection import PresenceAntiPeekingAlgo
-from internal.range_angle_map import num_rx_antennas_from_config
+from DBF import DBF
+from doppler import DopplerAlgo
+from presence_detection import PresenceAntiPeekingAlgo
+from range_angle_map import num_rx_antennas_from_config
 
 
 if __name__ == "__main__":
@@ -52,7 +52,7 @@ if __name__ == "__main__":
         # Create objects for Range-Doppler, DBF, and plotting.
         doppler = DopplerAlgo(config, num_rx_antennas)
         dbf = DBF(num_rx_antennas, num_beams=num_beams,
-                max_angle_degrees=max_angle_degrees)
+                  max_angle_degrees=max_angle_degrees)
         presence = PresenceAntiPeekingAlgo(
             config.num_samples_per_chirp, config.num_chirps_per_frame)
 
@@ -67,15 +67,15 @@ if __name__ == "__main__":
             beam_range_energy = np.zeros(
                 (config.num_samples_per_chirp, num_beams))
 
-            for i_ant in range(num_rx_antennas):    # For each antenna:
+            for i_ant in range(num_rx_antennas):   # For each antenna:
                 data = frame_data[i_ant, :, :]
                 presence_status, peeking_status = presence.presence(data)
-                status[i_ant] = presence_status     ###
+                status[i_ant] = presence_status
 
                 # Compute Doppler spectrum
                 dfft_dbfs = doppler.compute_doppler_map(data, i_ant)
                 rd_spectrum[:, :, i_ant] = dfft_dbfs
-    
+
             if np.any(status):
 
                 # Compute Range-Angle map
