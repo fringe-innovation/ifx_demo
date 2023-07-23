@@ -10,8 +10,9 @@ from Peakcure import peakcure
 from Diffphase import diffphase
 from IIR_Heart import iir_heart
 from IIR_Breath import iir_breath
+from scipy.signal import argrelextrema
 
-
+import time
 class HumanPresenceAndDFFTAlgo:
 
     def __init__(self, config: Avian.DeviceConfig):
@@ -65,7 +66,7 @@ def db(x):
 if __name__ == '__main__':
     args = parse_program_arguments(
         '''Derives presence and peeking information from Radar Data''',
-        def_nframes=300,
+        def_nframes=256,
         def_frate=20)
 
     print(f"Radar SDK Version: {Avian.get_version()}")
@@ -93,101 +94,71 @@ if __name__ == '__main__':
         num_frame = args.nframes
         num_chirp = config.num_chirps_per_frame
         num_sample = config.num_samples_per_chirp
-
+        heart_bit = 0
         data = []
         for frame_number in range(args.nframes):
             frame = device.get_next_frame()
             frame = frame[0, 0, :]
             data.append(frame)
 
-        data = np.array(data)
-        mean_centering = np.zeros([num_frame, num_sample])
-        avg = np.sum(data[:, :], axis=1) / num_sample
-        for i in range(num_sample):
-            mean_centering[:, i] = data[:, i] - avg
-        dfft_data, dist = algo.human_presence_and_dfft(mean_centering)
+            data = np.array(data)
+            mean_centering = np.zeros([num_frame, num_sample])
+            avg = np.sum(data[:, :], axis=1) / num_sample
+            for i in range(num_sample):
+                mean_centering[:, i] = data[:, i] - avg
+            dfft_data, dist = algo.human_presence_and_dfft(mean_centering)
 
-        dfft_data = np.transpose(dfft_data)
-        X, Y = np.meshgrid(np.linspace(0, 60, num_frame * num_chirp), np.arange(num_sample - 150))
-        ax = plt.figure(1).add_subplot(projection='3d')
-        ax.plot_wireframe(X, Y, db(dfft_data[:num_sample - 150, :]))
-        ax.set_title('1dfft')
-        ax.set_xlabel('t/s')
-        ax.set_ylabel('range(m)')
-        plt.show()
-        if 0.3 < dist < 0.9:
-            # rang-bin相位提取及解纠缠
-            rang_bin, phase, phase_unwrap = peakcure(dfft_data)
+            dfft_data = np.transpose(dfft_data)
+            X, Y = np.meshgrid(np.linspace(0, 60, num_frame * num_chirp), np.arange(num_sample - 150))
+            #ax = plt.figure(1).add_subplot(projection='3d')
+            #ax.plot_wireframe(X, Y, db(dfft_data[:num_sample - 150, :]))
+            #ax.set_title('1dfft')
+            #ax.set_xlabel('t/s')
+            #ax.set_ylabel('range(m)')
+            #plt.show()
+            if 0.3 < dist < 0.9:
+                # rang-bin相位提取及解纠缠
+                rang_bin, phase, phase_unwrap = peakcure(dfft_data)
 
-            times = np.linspace(0, 60, num_frame)
-            plt.figure(2)
-            plt.subplot(3, 1, 1)
-            plt.plot(times, db(rang_bin))
-            plt.title('Range-bin curve')
-            plt.xlabel('t/s')
-            plt.ylabel('dB')
-            plt.subplot(3, 1, 2)
-            plt.plot(times, phase)
-            plt.title('before Phase unwrap Infro')
-            plt.xlabel('t/s')
-            plt.ylabel('dB')
-            plt.subplot(3, 1, 3)
-            plt.plot(times, phase_unwrap)
-            plt.title('Afert Phase unwrap Infro')
-            plt.xlabel('t/s')
-            plt.ylabel('dB')
+                # 相位差分
+                diff_phase = diffphase(phase_unwrap)
+                # 滑动平均滤波
+                phase_remove = np.convolve(diff_phase, 5, 'same')
+                # 过滤呼吸信号
+                breath_wave = iir_breath(4, phase_remove)
+                # 过滤心跳信号
+                heart_wave = iir_heart(8, phase_remove)
+                heart_fre = np.abs(np.fft.fftshift(np.fft.fft(heart_wave)))
+                breath_fre = np.abs(np.fft.fft(breath_wave)) ** 2
+                times = np.linspace(0, 60, num_frame)
+                y = argrelextrema(heart_wave, np.greater, order=8)
+                c = 0
+                for i in range(20):
+                    for i in range(len(y[0]) - 1):
+                        c += 1   
+                
+                    c += heart_bit
+                heart_bit = c % 4
+                print(heart_bit)
+                plt.figure(1)
+                plt.subplot(2, 1, 1)
+                plt.plot(times, breath_wave)
+                plt.title('Respiratory waveform')
+                plt.xlabel('t/s')
+                plt.ylabel('dB')
+                plt.subplot(2, 1, 2)
+                plt.plot(times, heart_wave)
+                plt.title('Heart waveform')
+                plt.xlabel('t/s')
+                plt.ylabel('dB') 
+                plt.show()
+            data = []
+                    
 
-            # 相位差分
-            diff_phase = diffphase(phase_unwrap)
-            # 滑动平均滤波
-            phase_remove = np.convolve(diff_phase, 5, 'same')
 
-            plt.figure(3)
-            plt.subplot(2, 1, 1)
-            plt.plot(times, diff_phase)
-            plt.title('Phase diff curve')
-            plt.xlabel('t/s')
-            plt.ylabel('dB')
-            plt.subplot(2, 1, 2)
-            plt.plot(times, phase_remove)
-            plt.title('Pluse remove curve')
-            plt.xlabel('t/s')
-            plt.ylabel('dB')
 
-            # 过滤呼吸信号
-            breath_wave = iir_breath(4, phase_remove)
-            # 过滤心跳信号
-            heart_wave = iir_heart(8, phase_remove)
 
-            plt.figure(4)
-            plt.subplot(2, 1, 1)
-            plt.plot(times, breath_wave)
-            plt.title('Respiratory waveform')
-            plt.xlabel('t/s')
-            plt.ylabel('dB')
-            plt.subplot(2, 1, 2)
-            plt.plot(times, heart_wave)
-            plt.title('Heart waveform')
-            plt.xlabel('t/s')
-            plt.ylabel('dB')
-
-            heart_fre = np.abs(np.fft.fftshift(np.fft.fft(heart_wave)))
-
-            breath_fre = np.abs(np.fft.fft(breath_wave)) ** 2
-
-            plt.figure(5)
-            plt.subplot(2, 1, 1)
-            plt.plot(times, breath_fre)
-            plt.title('Respiratory spectrum')
-            plt.xlabel('freq/Hz')
-            plt.ylabel('dB')
-            plt.subplot(2, 1, 2)
-            plt.plot(times, heart_fre)
-            plt.title('Heart spectrum')
-            plt.xlabel('freq/Hz')
-            plt.ylabel('dB')
-
-        elif dist < 0.3:
-            print('被遮挡')
-        else:
-            print('当前位置无人')
+"""  elif dist < 0.3:
+                print('被遮挡')
+            else:
+                print('当前位置无人') """

@@ -25,11 +25,7 @@ def peakheart(data_in, breath_index):
         index_num_peaks = max_num_peaks_spectrum
 
     p_peak_index_sorted = np.zeros(index_num_peaks)
-    if index_num_peaks != 0:
-        for i in range(index_num_peaks):
-            idx = np.argmax(p_peak_values)
-            p_peak_index_sorted[i] = idx
-            p_peak_values[idx] = 0
+    if index_num_peaks != 0: 
         max_index_breath_spect = p_peak_index[int(p_peak_index_sorted[0])]
     else:
         max_index_breath_spect = np.argmax(data_in[heart_start_freq_index:heart_end_freq_index])
