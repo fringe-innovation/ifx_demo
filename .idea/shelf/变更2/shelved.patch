@@ -1,0 +1,21 @@
+Index: PeakBreath.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import numpy as np\r\n\r\n\r\ndef peakbreath(data_in):\r\n    breath_start_freq_index = 5  # 呼吸范围的索引的起始\r\n    breath_end_freq_index = 20  # 结束索引\r\n    # data_lan = len(data_in)\r\n    p_peak_values = np.zeros(128)  # 存储峰值数据\r\n    p_peak_index = np.zeros(128)  # 存储索引的数组\r\n    max_num_peaks_spectrum = 4  # 允许的最大峰值数量\r\n    num_peaks = 0\r\n\r\n    for i in range(breath_start_freq_index, breath_end_freq_index):\r\n        if data_in[i] > data_in[i - 1] and data_in[i] > data_in[i + 1]:\r\n            p_peak_index[num_peaks] = i\r\n            p_peak_values[num_peaks] = data_in[i]\r\n            num_peaks += 1\r\n    if num_peaks < max_num_peaks_spectrum:\r\n        index_num_peaks = num_peaks\r\n    else:\r\n        index_num_peaks = max_num_peaks_spectrum\r\n\r\n    p_peak_index_sorted = np.zeros(index_num_peaks)\r\n    if index_num_peaks != 0:\r\n        for i in range(index_num_peaks):\r\n            idx = np.argmax(p_peak_values)\r\n            p_peak_index_sorted[i] = idx\r\n            p_peak_values[idx] = 0\r\n        max_index_breath_spect = p_peak_index[int(p_peak_index_sorted[0])]\r\n    else:\r\n        max_index_breath_spect = np.argmax(data_in[breath_start_freq_index:breath_end_freq_index])\r\n\r\n    res = 60.0 * (max_index_breath_spect - 1) * 0.0195\r\n    res_index = max_index_breath_spect\r\n\r\n    return res, res_index\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/PeakBreath.py b/PeakBreath.py
+--- a/PeakBreath.py	(revision 8fa53b0ea00c2e6c0a6ebb97ba7570c87e31f6ea)
++++ b/PeakBreath.py	(date 1679911097447)
+@@ -2,8 +2,8 @@
+ 
+ 
+ def peakbreath(data_in):
+-    breath_start_freq_index = 5  # 呼吸范围的索引的起始
+-    breath_end_freq_index = 20  # 结束索引
++    breath_start_freq_index = 6  # 呼吸范围的索引的起始
++    breath_end_freq_index = 32  # 结束索引
+     # data_lan = len(data_in)
+     p_peak_values = np.zeros(128)  # 存储峰值数据
+     p_peak_index = np.zeros(128)  # 存储索引的数组

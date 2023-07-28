@@ -1,0 +1,21 @@
+Index: PeakHeart.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import numpy as np\r\n\r\n\r\ndef peakheart(data_in, breath_index):\r\n    heart_start_freq_index = 20  # 开始索引\r\n    heart_end_freq_index = 60  # 搜索的结束索引\r\n    # data_lan = len(data_in)\r\n    p_peak_values = np.zeros(128)  # 索引对应峰值\r\n    p_peak_index = np.zeros(128)  # 索引\r\n    max_num_peaks_spectrum = 4\r\n    convert_hz_bpm = 60.0\r\n    freq_increment_hz = 0.0195\r\n    breathing_harmonic_num = 2\r\n    breathing_harmonic_thresh_bpm = 4.0\r\n    num_peaks = 0\r\n\r\n    for i in range(heart_start_freq_index, heart_end_freq_index):\r\n        if data_in[i] > data_in[i - 1] and data_in[i] > data_in[i + 1]:\r\n            p_peak_index[num_peaks] = i\r\n            p_peak_values[num_peaks] = data_in[i]\r\n            num_peaks += 1\r\n    if num_peaks < max_num_peaks_spectrum:\r\n        index_num_peaks = num_peaks\r\n    else:\r\n        index_num_peaks = max_num_peaks_spectrum\r\n\r\n    p_peak_index_sorted = np.zeros(index_num_peaks)\r\n    if index_num_peaks != 0:\r\n        for i in range(index_num_peaks):\r\n            idx = np.argmax(p_peak_values)\r\n            p_peak_index_sorted[i] = idx\r\n            p_peak_values[idx] = 0\r\n        max_index_breath_spect = p_peak_index[int(p_peak_index_sorted[0])]\r\n    else:\r\n        max_index_breath_spect = np.argmax(data_in[heart_start_freq_index:heart_end_freq_index])\r\n\r\n    diff_index = np.abs(max_index_breath_spect - breathing_harmonic_num * breath_index)\r\n    if (diff_index * freq_increment_hz * convert_hz_bpm) < breathing_harmonic_thresh_bpm:\r\n        max_index_breath_spect = p_peak_index[int(p_peak_index_sorted[2])]\r\n\r\n    res = convert_hz_bpm * (max_index_breath_spect - 1) * freq_increment_hz\r\n    return res\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/PeakHeart.py b/PeakHeart.py
+--- a/PeakHeart.py	(revision 8fa53b0ea00c2e6c0a6ebb97ba7570c87e31f6ea)
++++ b/PeakHeart.py	(date 1679911086539)
+@@ -2,8 +2,8 @@
+ 
+ 
+ def peakheart(data_in, breath_index):
+-    heart_start_freq_index = 20  # 开始索引
+-    heart_end_freq_index = 60  # 搜索的结束索引
++    heart_start_freq_index = 42  # 开始索引
++    heart_end_freq_index = 104  # 搜索的结束索引
+     # data_lan = len(data_in)
+     p_peak_values = np.zeros(128)  # 索引对应峰值
+     p_peak_index = np.zeros(128)  # 索引

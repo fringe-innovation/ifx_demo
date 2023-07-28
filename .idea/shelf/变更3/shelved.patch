@@ -1,0 +1,136 @@
+Index: main.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import argparse\r\n\r\nimport numpy as np\r\nimport matplotlib.pyplot as plt\r\nfrom scipy import signal\r\nfrom scipy import constants\r\nfrom ifxAvian import Avian\r\n\r\n\r\nfrom fft_spectrum import fft_spectrum\r\nfrom Peakcure import peakcure\r\nfrom Diffphase import diffphase\r\nfrom IIR_Heart import iir_heart\r\nfrom IIR_Breath import iir_breath\r\nfrom PeakBreath import peakbreath\r\nfrom PeakHeart import peakheart\r\n\r\n\r\nclass HumanPresenceAndDFFTAlgo:\r\n\r\n    def __init__(self, config: Avian.DeviceConfig):\r\n        self.num_samples_per_chirp = config.num_samples_per_chirp\r\n        self.num_chirps_per_frame = config.num_chirps_per_frame\r\n\r\n        # compute Blackman-Harris Window matrix over chirp samples(range)\r\n        self.range_window = signal.blackmanharris(self.num_samples_per_chirp).reshape(1, self.num_samples_per_chirp)\r\n\r\n        # bandwidth_hz = abs(config.end_frequency_Hz - config.start_frequency_Hz)\r\n        # fft_size = self.num_samples_per_chirp * 2\r\n        # self.range_bin_length = constants.c / (2 * bandwidth_hz * fft_size / self.num_samples_per_chirp)\r\n\r\n        # Algorithm Parameters\r\n        self.detect_start_sample = self.num_samples_per_chirp // 8\r\n        self.detect_end_sample = self.num_samples_per_chirp // 2\r\n\r\n        self.threshold_presence = 0.1\r\n\r\n        self.alpha_slow = 0.001\r\n        self.alpha_med = 0.05\r\n        self.alpha_fast = 0.6\r\n\r\n        self.slow_avg = None\r\n        self.fast_avg = None\r\n\r\n        # Initialize state\r\n        self.presence_status = False\r\n        self.first_run = True\r\n\r\n    def human_presence_and_dfft(self, data_in):  # sourcery skip: inline-immediately-returned-variable\r\n        # data: single chirp data for single antenna\r\n\r\n        # copy values into local variables to keep names short\r\n        alpha_slow = self.alpha_slow\r\n        alpha_med = self.alpha_med\r\n        alpha_fast = self.alpha_fast\r\n\r\n        # calculate range fft spectrum of the frame\r\n        range_fft = fft_spectrum(data_in, self.range_window)\r\n\r\n        # Average absolute FFT values over number of chirps\r\n        fft_spec_abs = abs(range_fft)\r\n        fft_norm = np.divide(fft_spec_abs.sum(axis=0), self.num_chirps_per_frame)\r\n\r\n        # Presence sensing\r\n        if self.first_run:  # initialize averages\r\n            self.slow_avg = fft_norm\r\n            self.fast_avg = fft_norm\r\n            self.first_run = False\r\n\r\n        alpha_used = alpha_med if self.presence_status == False else alpha_slow\r\n        self.slow_avg = self.slow_avg * (1 - alpha_used) + fft_norm * alpha_used\r\n        self.fast_avg = self.fast_avg * (1 - alpha_fast) + fft_norm * alpha_fast\r\n        data = self.fast_avg - self.slow_avg\r\n\r\n        self.presence_status = np.max(data[self.detect_start_sample:self.detect_end_sample]) > self.threshold_presence\r\n\r\n        return self.presence_status, range_fft\r\n\r\n\r\ndef parse_program_arguments(description, def_nframes, def_frate):\r\n    # Parse all program attributes\r\n    # description:   describes program\r\n    # def_nframes:   default number of frames\r\n    # def_frate:     default frame rate in Hz\r\n\r\n    parser = argparse.ArgumentParser(description=description)\r\n    parser.add_argument('-n', '--nframes', type=int,\r\n                        default=def_nframes,\r\n                        help=f\"number of frames, default {str(def_nframes)}\")\r\n    parser.add_argument('-f', '--frate', type=int,\r\n                        default=def_frate,\r\n                        help=f\"frame rate in Hz, default {str(def_frate)}\")\r\n    return parser.parse_args()\r\n\r\n\r\n# sourcery skip: for-index-underscore\r\nif __name__ == '__main__':\r\n\r\n    args = parse_program_arguments(\r\n        '''Derives presence and peeking information from Radar Data''',\r\n        def_nframes=200,\r\n        def_frate=200)\r\n\r\n    print(f\"Radar SDK Version: {Avian.get_version()}\")\r\n\r\n    config = Avian.DeviceConfig(\r\n        sample_rate_Hz=2e6,  # ADC sample rate of 2MHz\r\n        rx_mask=1,  # RX antenna 1 activated\r\n        tx_mask=1,  # TX antenna 1 activated\r\n        tx_power_level=31,  # TX power level of 31\r\n        if_gain_dB=33,  # 33dB if gain\r\n        start_frequency_Hz=58e9,  # start frequency: 58.0 GHz\r\n        end_frequency_Hz=63.5e9,  # end frequency: 63.5 GHz\r\n        num_samples_per_chirp=256,  # 256 samples per chirp\r\n        num_chirps_per_frame=1,  # 32 chirps per frame\r\n        chirp_repetition_time_s=0.000150,  # Chirp repetition time (or pulse repetition time) of 150us\r\n        frame_repetition_time_s=1 / args.frate,  # Frame repetition time default 0.005s (frame rate of 200Hz)\r\n        mimo_mode=\"off\")  # MIMO disabled\r\n\r\n    # connect to an Avian radar sensor\r\n    with Avian.Device() as device:\r\n\r\n        # metrics = device.metrics_from_config(config)\r\n\r\n        # set device config\r\n        device.set_config(config)\r\n        algo = HumanPresenceAndDFFTAlgo(config)\r\n        while True:\r\n            data = []\r\n\r\n            # A loop for fetching a finite number of frames comes next.\r\n            for frame_number in range(args.nframes):\r\n                frame = device.get_next_frame()\r\n                frame = frame[0, 0, :]\r\n\r\n                data.append(frame)\r\n            data = np.asarray(data)\r\n\r\n            presence, dfft_data = algo.human_presence_and_dfft(data)\r\n            if presence == True:\r\n                # rang-bin相位提取及解纠缠\r\n                rang_bin, phase, phase_unwrap = peakcure(dfft_data)\r\n                # 相位差分\r\n                diff_phase = diffphase(phase_unwrap)\r\n                # 滑动平均滤波\r\n                phase_remove = np.convolve(diff_phase, 5, 'same')\r\n                # 过滤呼吸信号\r\n                breath_wave = iir_breath(4, phase_remove)\r\n                # 过滤心跳信号\r\n                heart_wave = iir_heart(8, phase_remove)\r\n\r\n                # breath_fre = np.abs(np.fft.fftshift(np.fft.fft(breath_wave)))\r\n                heart_fre = np.abs(np.fft.fftshift(np.fft.fft(heart_wave)))\r\n\r\n                breath_fre = np.abs(np.fft.fft(breath_wave)) ** 2\r\n\r\n                breath_rate, maxIndexBreathSpect = peakbreath(breath_fre)\r\n                heart_rate = peakheart(heart_fre, maxIndexBreathSpect)\r\n\r\n                print(f\"呼吸频率：{breath_rate}, 心跳频率：{heart_rate}\")\r\n            else:\r\n                print(\"当前位置无人\")\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/main.py b/main.py
+--- a/main.py	(revision 8fa53b0ea00c2e6c0a6ebb97ba7570c87e31f6ea)
++++ b/main.py	(date 1679932481949)
+@@ -1,12 +1,11 @@
+ import argparse
+ 
+ import numpy as np
+-import matplotlib.pyplot as plt
+ from scipy import signal
+ from scipy import constants
++from collections import deque
+ from ifxAvian import Avian
+ 
+-
+ from fft_spectrum import fft_spectrum
+ from Peakcure import peakcure
+ from Diffphase import diffphase
+@@ -25,15 +24,15 @@
+         # compute Blackman-Harris Window matrix over chirp samples(range)
+         self.range_window = signal.blackmanharris(self.num_samples_per_chirp).reshape(1, self.num_samples_per_chirp)
+ 
+-        # bandwidth_hz = abs(config.end_frequency_Hz - config.start_frequency_Hz)
+-        # fft_size = self.num_samples_per_chirp * 2
+-        # self.range_bin_length = constants.c / (2 * bandwidth_hz * fft_size / self.num_samples_per_chirp)
++        bandwidth_hz = abs(config.end_frequency_Hz - config.start_frequency_Hz)
++        fft_size = self.num_samples_per_chirp * 2
++        self.range_bin_length = constants.c / (2 * bandwidth_hz * fft_size / self.num_samples_per_chirp)
+ 
+         # Algorithm Parameters
+         self.detect_start_sample = self.num_samples_per_chirp // 8
+         self.detect_end_sample = self.num_samples_per_chirp // 2
+ 
+-        self.threshold_presence = 0.1
++        self.threshold_presence = 0.0007
+ 
+         self.alpha_slow = 0.001
+         self.alpha_med = 0.05
+@@ -61,17 +60,26 @@
+         fft_spec_abs = abs(range_fft)
+         fft_norm = np.divide(fft_spec_abs.sum(axis=0), self.num_chirps_per_frame)
+ 
++        skip = 8
++        max_index = np.argmax(fft_norm[skip:])
++        dist = self.range_bin_length * (max_index + skip)
++
+         # Presence sensing
+         if self.first_run:  # initialize averages
+             self.slow_avg = fft_norm
+             self.fast_avg = fft_norm
+             self.first_run = False
+ 
+-        alpha_used = alpha_med if self.presence_status == False else alpha_slow
++        if not self.presence_status:
++            alpha_used = alpha_med
++        else:
++            alpha_used = alpha_slow
+         self.slow_avg = self.slow_avg * (1 - alpha_used) + fft_norm * alpha_used
+         self.fast_avg = self.fast_avg * (1 - alpha_fast) + fft_norm * alpha_fast
+         data = self.fast_avg - self.slow_avg
+ 
++        a = np.max(data[self.detect_start_sample:self.detect_end_sample])
++
+         self.presence_status = np.max(data[self.detect_start_sample:self.detect_end_sample]) > self.threshold_presence
+ 
+         return self.presence_status, range_fft
+@@ -98,8 +106,8 @@
+ 
+     args = parse_program_arguments(
+         '''Derives presence and peeking information from Radar Data''',
+-        def_nframes=200,
+-        def_frate=200)
++        def_nframes=300,
++        def_frate=20)
+ 
+     print(f"Radar SDK Version: {Avian.get_version()}")
+ 
+@@ -125,19 +133,30 @@
+         # set device config
+         device.set_config(config)
+         algo = HumanPresenceAndDFFTAlgo(config)
++        q = deque()
++
++        num_smaples = config.num_samples_per_chirp
++        num_chips = config.num_chirps_per_frame
++        X, Y = np.meshgrid(np.linspace(0, 60, args.nframes * num_chips)), np.arange(num_smaples - 150)
++
+         while True:
+-            data = []
+-
+-            # A loop for fetching a finite number of frames comes next.
+-            for frame_number in range(args.nframes):
+-                frame = device.get_next_frame()
+-                frame = frame[0, 0, :]
+-
+-                data.append(frame)
+-            data = np.asarray(data)
+-
+-            presence, dfft_data = algo.human_presence_and_dfft(data)
+-            if presence == True:
++            frame = device.get_next_frame()
++            frame = frame[0, 0, :]
++            q.append(frame)
++            if len(q) == args.nframes:
++                data = np.array(q)
++                presence, dfft_data = algo.human_presence_and_dfft(data)
++                # if presence:
++
++                # fig = plt.figure()
++                # ax = fig.add_subplot(111, projection='3D')
++                # ax.plot(X, Y, 20 * np.log10(abs(dfft_data)))
++                # ax.set_title('1dfft')
++                # ax.set_xlabel('t/s')
++                # ax.set_ylabel('range(m)')
++                # ax.set_zlabel("dB")
++                # plt.show()
++
+                 # rang-bin相位提取及解纠缠
+                 rang_bin, phase, phase_unwrap = peakcure(dfft_data)
+                 # 相位差分
+@@ -158,5 +177,7 @@
+                 heart_rate = peakheart(heart_fre, maxIndexBreathSpect)
+ 
+                 print(f"呼吸频率：{breath_rate}, 心跳频率：{heart_rate}")
+-            else:
+-                print("当前位置无人")
++                # else:
++                #     print("当前位置无人")
++
++                q.pop()
