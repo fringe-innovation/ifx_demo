@@ -135,7 +135,6 @@ if __name__ == '__main__':
         heart = []
         breath = []
         data = []
-        yaw = []
         device.set_config(config)
         algo = HumanPresenceAndDFFTAlgo(config)
         # get metrics and print them
@@ -187,8 +186,6 @@ if __name__ == '__main__':
                 mean_centering[:, i] = data[:, i] - avg
             dfft_data, dist = algo.human_presence_and_dfft(mean_centering)
             dfft_data = np.transpose(dfft_data)
-            X, Y = np.meshgrid(np.linspace(0, 60, num_frame * num_chirp), np.arange(num_sample - 150))
-            
 
             # Maximum energy in Range-Angle map
             max_energy = np.max(beam_range_energy)
