@@ -1,19 +1,22 @@
 import argparse
+import pprint
 import numpy as np
-import matplotlib.pyplot as plt
+import math
 from scipy import signal
 from scipy import constants
 from ifxAvian import Avian
-from collections import deque
 
 from fft_spectrum import fft_spectrum
+from DBF import DBF
+from doppler import DopplerAlgo
 from Peakcure import peakcure
 from Diffphase import diffphase
 from IIR_Heart import iir_heart
 from IIR_Breath import iir_breath
 from scipy.signal import argrelextrema
+from presence_detection import PresenceAntiPeekingAlgo
 
-import time
+
 class HumanPresenceAndDFFTAlgo:
 
     def __init__(self, config: Avian.DeviceConfig):
@@ -42,7 +45,20 @@ class HumanPresenceAndDFFTAlgo:
         dist = self.range_bin_length * (max_index + skip)
 
         return range_fft, dist
+    def human_angle(self, data_in):
+        
+        return 
 
+
+def num_rx_antennas_from_config(config):
+    rx_mask = config.rx_mask
+
+    # popcount for rx_mask
+    c = 0
+    for i in range(32):
+        if rx_mask & (1 << i):
+            c += 1
+    return c
 
 def parse_program_arguments(description, def_nframes, def_frate):
     # Parse all program attributes
@@ -60,53 +76,45 @@ def parse_program_arguments(description, def_nframes, def_frate):
     return parser.parse_args()
 
 
-def db(x):
-    return 20 * np.log10(np.abs(x))
+
+#用于单次计算给定窗口长度的均值滤波
+def ava_filter(x, filt_length):
+    N = len(x)
+    res = []
+    for i in range(N):
+        if i <= filt_length // 2 or i >= N - (filt_length // 2):
+            temp = x[i]
+        else:
+            sum = 0
+            for j in range(filt_length):
+                sum += x[i - filt_length // 2 + j]
+            temp = sum * 1.0 / filt_length
+        res.append(temp)
+    return res
+
+#函数denoise用于指定次数调用ava_filter函数，进行降噪处理
+def denoise( x, n, filt_length):
+    for _ in range(n):
+        res = ava_filter(x, filt_length)
+        x = res
+    return res
+
 def f(x):
-    return 120 + 40 * x
+    return 76 + 19 * x
 
-# 定义一个函数，输入是一个心脏跳动曲线数组，输出是一个峰值数组
-def detect_peaks(ecg):
-    # 峰值阈值，只有超过这个值的点才被认为是峰值，可以根据实际情况调整
-    threshold = 70
-    return [
-        (i, ecg[i])
-        for i in range(1, ecg.size - 1)
-        if ecg[i] > threshold and ecg[i] > ecg[i - 1] and ecg[i] > ecg[i + 1]
-    ]
-
-# 输入是一个峰值的索引和值的元组，输出是一个心率的值
-def calculate_heart_rate(peak):
-    # 假设每个点对应的时间间隔为0.1秒，你可以根据实际情况修改
-    time_interval = 0.05
-    # 从峰值元组中获取索引
-    index = peak[0]
-    return 60 / (index * time_interval)
-
-# 输入是一个心率曲线数组，输出是一个平均心率的值
-def sliding_window(hr):
-    # 窗口大小
-    window_size = 80
-    # 输出数组，长度为(hr.size - window_size) // step + 1
-    output = np.zeros(len(hr) - window_size)
-    # 循环遍历每个窗口
-    for i in range(len(hr) - window_size ):
-    # 计算窗口内的平均值，并存储在输出数组中
-        output[i] = np.mean(hr[i:i+window_size])
-    # 返回输出数组中的最后一个元素，即最新的平均心率
-    return output[-1]
 
 if __name__ == '__main__':
     args = parse_program_arguments(
         '''Derives presence and peeking information from Radar Data''',
         def_nframes=256,
         def_frate=20)
-
+    num_beams = 27         # number of beams
+    max_angle_degrees = 40  # maximum angle, angle ranges from -40 to +40 degrees
     print(f"Radar SDK Version: {Avian.get_version()}")
 
     config = Avian.DeviceConfig(
         sample_rate_Hz=2e6,  # ADC sample rate of 2MHz
-        rx_mask=6,  # RX antenna 1 activated
+        rx_mask=5,  # RX antenna 3 activated
         tx_mask=1,  # TX antenna 1 activated
         tx_power_level=31,  # TX power level of 31
         if_gain_dB=33,  # 33dB if gain
@@ -121,20 +129,54 @@ if __name__ == '__main__':
 
     # connect to an Avian radar sensor
     with Avian.Device() as device:
-        device.set_config(config)
-        algo = HumanPresenceAndDFFTAlgo(config)
-
-        num_frame = args.nframes
-        num_chirp = config.num_chirps_per_frame
-        num_sample = config.num_samples_per_chirp
         rate = 0
         np_time = 0
         heart_bit = 0
         heart = []
         breath = []
         data = []
+        yaw = []
+        device.set_config(config)
+        algo = HumanPresenceAndDFFTAlgo(config)
+        # get metrics and print them
+        metrics = device.metrics_from_config(config)
+        pprint.pprint(metrics)
+        # get maximum range
+        max_range_m = metrics.max_range_m
+        # Create frame handle
+        num_rx_antennas = num_rx_antennas_from_config(config)
+        # Create objects for Range-Doppler, DBF, and plotting.
+        doppler = DopplerAlgo(config, num_rx_antennas)
+        dbf = DBF(num_rx_antennas, num_beams=num_beams,
+                  max_angle_degrees=max_angle_degrees)
+        presence = PresenceAntiPeekingAlgo(config.num_samples_per_chirp, config.num_chirps_per_frame)
+        num_frame = args.nframes
+        num_chirp = config.num_chirps_per_frame
+        num_sample = config.num_samples_per_chirp
+        
         for _ in range(8000):
             frame = device.get_next_frame()
+            rd_spectrum = np.zeros(
+                (config.num_samples_per_chirp, 2*config.num_chirps_per_frame, num_rx_antennas), dtype=complex)
+
+            beam_range_energy = np.zeros(
+                (config.num_samples_per_chirp, num_beams))
+            for i_ant in range(num_rx_antennas):  # For each antenna
+                # Current RX antenna (num_samples_per_chirp x num_chirps_per_frame)
+                data_p = frame[0, :, :]
+                mat = frame[i_ant, :, :]
+                presence_status, peeking_status = presence.presence(data_p)
+
+                # Compute Doppler spectrum
+                dfft_dbfs = doppler.compute_doppler_map(mat, i_ant)
+                rd_spectrum[:, :, i_ant] = dfft_dbfs
+
+            # Compute Range-Angle map
+            rd_beam_formed = dbf.run(rd_spectrum)
+            for i_beam in range(num_beams):
+                doppler_i = rd_beam_formed[:, :, i_beam]
+                beam_range_energy[:, i_beam] += np.linalg.norm(
+                    doppler_i, axis=1) / np.sqrt(num_beams)
             frame = frame[0, 0, :]
             data.append(frame)
 
@@ -144,10 +186,18 @@ if __name__ == '__main__':
             for i in range(num_sample):
                 mean_centering[:, i] = data[:, i] - avg
             dfft_data, dist = algo.human_presence_and_dfft(mean_centering)
-
             dfft_data = np.transpose(dfft_data)
             X, Y = np.meshgrid(np.linspace(0, 60, num_frame * num_chirp), np.arange(num_sample - 150))
-            #print(dist)
+            
+
+            # Maximum energy in Range-Angle map
+            max_energy = np.max(beam_range_energy)
+            scale = 150
+            beam_range_energy = scale*(beam_range_energy/max_energy - 1)
+            # Find dominant angle of target
+            _, idx = np.unravel_index(
+                beam_range_energy.argmax(), beam_range_energy.shape)
+            angle=math.acos(idx/30)*180/3.14
             if 0.35 < dist < 1.1:
                 # 无人计数置零
                 np_time = 0
@@ -167,84 +217,32 @@ if __name__ == '__main__':
 
                 array_heart = np.array(heart_fre)
                 array_breath = np.array(heart_fre)
-                heart_peaks = argrelextrema(array_heart, np.greater, order=30)
-                breath_peaks = argrelextrema(array_breath, np.greater, order=90)
+                heart_peaks = argrelextrema(array_heart, np.greater, order=15)
+                breath_peaks = argrelextrema(array_breath, np.greater, order=20)
 
                 heart_peaks = heart_peaks[0][array_heart[heart_peaks] > f(dist)]
                 heart_count = len(heart_peaks)
                 heart.append(heart_count)
 
-                breath_peaks = breath_peaks[0][array_breath[breath_peaks] >f(dist)]
+                breath_peaks = breath_peaks[0][array_breath[breath_peaks] >(f(dist)+20)]
                 breath_count = len(breath_peaks)
                 breath.append(breath_count)
                 rate = rate + 1
                 times = np.linspace(0, 60, num_frame)
-                if len(heart) >= 1200:
+
+                if rate >= 800:
                     heart_bit = sum(heart)
                     breath_bit = sum(breath)
                     heart.pop(0)
                     breath.pop(0)
-                    if rate % 80 == 0:
+                    if rate % 40 == 0:
                         print(breath_bit)
                         print(heart_bit)
-                        rate = 1200  
+                        rate = 800  
             else:
                 np_time = np_time + 1
                 if np_time > 30:
                     print("no person")
+                    print(angle-30)
                     np_time = 0  
-            
-            """ times = np.linspace(0, 60, num_frame)
-                plt.figure(1)
-                plt.subplot(2, 1, 1)
-                plt.plot(times, breath_fre)
-                plt.title('Respiratory waveform')
-                plt.xlabel('t/s')
-                plt.ylabel('dB')
-                plt.subplot(2, 1, 2)
-                plt.plot(times, heart_fre)
-                plt.title('Heart waveform')
-                plt.xlabel('t/s')
-                plt.ylabel('dB') 
-                plt.show()  """   
             data = []
-            """if len(heart) >= 1200:
-                    heart_bit = sum(heart)
-                    heart.pop(0)
-                    if rate % 40 == 0:
-                      print(heart_bit)
-                      rate = 1200 """
-            
-
-            """ for i in range(peak_count):
-                c += 1   
-                heart_bit = heart_bit + c
-              rate += 1
-              heart = heart + heart_bit
-              heart_bit = 0  """
-
-
-                                      #if len(heart) >= 1200:
-                                      #  heart_bit = sum(heart)
-                                      #  heart.pop(0)
-                                      #  if rate % 40 == 0:
-                                      #    print(heart_bit)
-                                      #    rate = 1200     
-
-"""                 for c, _ in enumerate(range(peak_count), start=1):
-                    heart_bit = heart_bit + c
-                rate += 1
-                heart1 = heart1 + heart_bit
-                heart_bit = 0
-                if rate >= 400:
-                  print(heart1*3)
-                  rate = 0
-                  heart1 = 0 """
-
-"""peaks = detect_peaks(heart_fre)
-                heart.extend(calculate_heart_rate(peak) for peak in peaks)
-                #  用滑动窗口算法来计算平均心率，并输出
-                if rate >= 80:
-                    avg_hr = sliding_window(heart)
-                    print(avg_hr)
-                    rate = 0  """

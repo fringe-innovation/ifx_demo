@@ -341,7 +341,7 @@ if __name__ == '__main__':
             #plot.draw(beam_range_energy, f"Range-Angle map using DBF, angle={angle_degrees:+02.0f} degrees")
             print(f" Presence: {presence_status}")
             #print("Distance:" + format(distance, "^05.3f") + "m")
-            #print(f"Angle: {angle_degrees} degrees")
+            print(f"Angle: {angle_degrees} degrees")
         plot.close()
 
 
